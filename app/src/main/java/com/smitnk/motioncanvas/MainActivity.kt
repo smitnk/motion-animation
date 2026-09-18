@@ -780,11 +780,12 @@ fun MotionCanvasApp() {
         val selected = selectedStrokeIds
         val points = selected.flatMap { strokes[it].points }
         if (points.isEmpty()) return
-        val center = Offset(points.map { it.x }.average().toFloat(), points.map { it.y }.average().toFloat())
+        val bounds = SelectionTransformEngine.bounds(points) ?: return
         snapshot()
         val updated = strokes.mapIndexed { index, stroke ->
-            if (index in selected) stroke.copy(points = transformPoints(stroke.points, center, scaleFactor, degrees, delta))
-            else stroke
+            if (index in selected) {
+                stroke.copy(points = SelectionTransformEngine.transform(stroke.points, bounds, scaleFactor, degrees, delta))
+            } else stroke
         }
         currentStrokes = currentStrokes.toMutableList().also { it[selectedLayer] = updated }
         saveFrame()
@@ -1377,6 +1378,26 @@ fun MotionCanvasApp() {
                         nodes.forEachIndexed { n, p ->
                             drawCircle(if (n == editNodeIndex) Color.Yellow else Color.Cyan, radius = 11f, center = p)
                             drawCircle(Color.DarkGray, radius = 4f, center = p)
+                        }
+                    }
+
+                    if (tool == Tool.SELECT && selectedStrokeIds.isNotEmpty()) {
+                        val selectedPoints = currentStrokes.getOrNull(selectedLayer).orEmpty()
+                            .filterIndexed { index, _ -> index in selectedStrokeIds }
+                            .flatMap { it.points }
+                        val selectedBounds = SelectionTransformEngine.bounds(selectedPoints)
+                        if (selectedBounds != null) {
+                            val pad = 18f
+                            drawRect(
+                                Color.Blue.copy(alpha = 0.55f),
+                                topLeft = Offset(selectedBounds.left - pad, selectedBounds.top - pad),
+                                size = androidx.compose.ui.geometry.Size(
+                                    selectedBounds.width + pad * 2f,
+                                    selectedBounds.height + pad * 2f
+                                ),
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f)
+                            )
+                            drawCircle(Color.Blue, radius = 7f, center = selectedBounds.center)
                         }
                     }
 
