@@ -183,6 +183,7 @@ fun MotionCanvasApp() {
     var alphaLock by remember { mutableStateOf(false) }
     var clippingMask by remember { mutableStateOf(false) }
     var showGrid by remember { mutableStateOf(false) }
+    var snapToGridEnabled by remember { mutableStateOf(false) }
     var gridType by remember { mutableStateOf("2D") }
     var gridSpacing by remember { mutableFloatStateOf(100f) }
     var perspectivePoints by remember { mutableIntStateOf(1) }
@@ -225,6 +226,20 @@ fun MotionCanvasApp() {
     }
 
     fun copyBitmap(source: Bitmap): Bitmap = source.copy(Bitmap.Config.ARGB_8888, true)
+    fun snapArtPoint(point: Offset): Offset {
+        if (!snapToGridEnabled) return point
+        val targets = currentStrokes.flatten().flatMap { it.points }
+        return CanvasGuideEngine.applySnapping(
+            point,
+            CanvasGuideEngine.GridConfig(
+                spacing = gridSpacing,
+                snapEnabled = true,
+                snapRadius = (gridSpacing * 0.2f).coerceIn(8f, 48f)
+            ),
+            targets
+        )
+    }
+
 
     fun saveRasterFrame() {
         rasterFrames = rasterFrames.toMutableList().also { it[frameIndex] = rasterLayers.map { bitmap -> copyBitmap(bitmap) } }
@@ -1189,6 +1204,7 @@ fun MotionCanvasApp() {
             FilterChip(alphaLock, { alphaLock = !alphaLock }, label = { Text("Alpha Lock") })
             FilterChip(clippingMask, { if (selectedLayer > 0) { clippingMask = !clippingMask; val updated = layers.toMutableList(); updated[selectedLayer] = updated[selectedLayer].copy(clipToBelow = clippingMask); layers = updated } }, enabled = selectedLayer > 0, label = { Text("Clip Below") })
             FilterChip(showGrid, { showGrid = !showGrid }, label = { Text("Grid") })
+            FilterChip(snapToGridEnabled, { snapToGridEnabled = !snapToGridEnabled }, label = { Text("Snap") })
         }
 
         if (showGrid) {
@@ -1351,8 +1367,9 @@ fun MotionCanvasApp() {
                                         if (editNodeIndex >= 0) snapshot()
                                     }
                                 } else {
-                                    current = listOf(artStart)
-                                    if (tool == Tool.SELECT) selection = listOf(artStart)
+                                    val startPoint = if (tool == Tool.SELECT) artStart else snapArtPoint(artStart)
+                                    current = listOf(startPoint)
+                                    if (tool == Tool.SELECT) selection = listOf(startPoint)
                                 }
                             },
                             onDrag = { change, _ ->
@@ -1377,8 +1394,9 @@ fun MotionCanvasApp() {
                                         }
                                     }
                                 } else {
-                                    current = current + artPoint
-                                    if (tool == Tool.SELECT) selection = selection + artPoint
+                                    val drawPoint = if (tool == Tool.SELECT) artPoint else snapArtPoint(artPoint)
+                                    current = current + drawPoint
+                                    if (tool == Tool.SELECT) selection = selection + drawPoint
                                 }
                             },
                             onDragEnd = {
