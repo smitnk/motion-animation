@@ -226,13 +226,26 @@ fun MotionCanvasApp() {
 
     fun copyBitmap(source: Bitmap): Bitmap = source.copy(Bitmap.Config.ARGB_8888, true)
 
+    fun recycleBitmaps(bitmaps: Iterable<Bitmap>) {
+        bitmaps.forEach { bitmap ->
+            if (!bitmap.isRecycled) bitmap.recycle()
+        }
+    }
+
     fun saveRasterFrame() {
-        rasterFrames = rasterFrames.toMutableList().also { it[frameIndex] = rasterLayers.map { bitmap -> copyBitmap(bitmap) } }
+        if (frameIndex !in rasterFrames.indices) return
+        val replacement = rasterLayers.map { bitmap -> copyBitmap(bitmap) }
+        val old = rasterFrames[frameIndex]
+        rasterFrames = rasterFrames.toMutableList().also { it[frameIndex] = replacement }
+        recycleBitmaps(old)
     }
 
     fun loadRasterFrame(index: Int) {
         if (index !in rasterFrames.indices) return
-        rasterLayers = rasterFrames[index].map { bitmap -> copyBitmap(bitmap) }
+        val replacement = rasterFrames[index].map { bitmap -> copyBitmap(bitmap) }
+        val old = rasterLayers
+        rasterLayers = replacement
+        recycleBitmaps(old)
     }
 
     fun saveFrame() {
@@ -383,18 +396,21 @@ fun MotionCanvasApp() {
             val loadedRasters = model.frames.mapIndexed { fi, _ ->
                 loadedLayers.indices.map { li ->
                     val bytes = temp["frames/f${fi}_l${li}.png"]
-                    val decoded = bytes?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
-                    if (decoded != null) decoded.copy(Bitmap.Config.ARGB_8888, true)
-                    else Bitmap.createBitmap(model.width, model.height, Bitmap.Config.ARGB_8888)
+                    bytes?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+                        ?: Bitmap.createBitmap(model.width, model.height, Bitmap.Config.ARGB_8888)
                 }
             }
 
+            val oldRasterFrames = rasterFrames
+            val oldRasterLayers = rasterLayers
             layers = loadedLayers
             frameData = loadedFrames
             rasterFrames = loadedRasters
             frameIndex = 0
             currentStrokes = loadedFrames.first().layers.map { it.strokes }
             rasterLayers = loadedRasters.first().map { copyBitmap(it) }
+            recycleBitmaps(oldRasterFrames.flatten())
+            recycleBitmaps(oldRasterLayers)
             selectedLayer = selectedLayer.coerceIn(0, loadedLayers.lastIndex)
             selectedStrokeIds = emptySet()
             selection = emptyList()
@@ -440,12 +456,20 @@ fun MotionCanvasApp() {
                 val encoder = GifEncoder(output, rasterWidth, rasterHeight, 0)
                 val options = ImageOptions()
                 options.setDelay((1000L / fps.coerceAtLeast(1)).coerceAtLeast(1L), TimeUnit.MILLISECONDS)
+                val pixels = IntArray(rasterWidth * rasterHeight)
+                val data = Array(rasterWidth) { IntArray(rasterHeight) }
                 frameData.indices.forEach { index ->
                     val bitmap = renderFrameBitmap(index)
                     try {
-                        val pixels = IntArray(rasterWidth * rasterHeight)
                         bitmap.getPixels(pixels, 0, rasterWidth, 0, 0, rasterWidth, rasterHeight)
-                        val data = Array(rasterWidth) { x -> IntArray(rasterHeight) { y -> pixels[y * rasterWidth + x] } }
+                        for (x in 0 until rasterWidth) {
+                            val column = data[x]
+                            var offset = x
+                            for (y in 0 until rasterHeight) {
+                                column[y] = pixels[offset]
+                                offset += rasterWidth
+                            }
+                        }
                         val hold = frameData[index].layers.firstOrNull()?.hold?.coerceAtLeast(1) ?: 1
                         repeat(hold) { encoder.addImage(data, options) }
                     } finally {
