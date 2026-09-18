@@ -35,4 +35,20 @@ class ProjectIoEngineTest {
         val bad = model().copy(frames = listOf(ProjectIoFrame(listOf(ProjectIoLayerFrame()))))
         assertThrows(IllegalArgumentException::class.java) { ProjectIoEngine.encode(bad) }
     }
+    @Test fun duplicateMetadataRecordsAreRejected() {
+        val text = ProjectIoEngine.encode(model()) + "version=2\n"
+        assertThrows(IllegalArgumentException::class.java) { ProjectIoEngine.decode(text) }
+    }
+
+    @Test fun duplicateFrameRecordsAreRejected() {
+        val text = ProjectIoEngine.encode(model()) + "frame|0|2\n"
+        assertThrows(IllegalArgumentException::class.java) { ProjectIoEngine.decode(text) }
+    }
+
+    @Test fun frameRecordOutsideDeclaredRangeIsRejected() {
+        val text = ProjectIoEngine.encode(model()) + "frame|9|2\n"
+        assertThrows(IllegalArgumentException::class.java) { ProjectIoEngine.decode(text) }
+    }
+
+
 }
