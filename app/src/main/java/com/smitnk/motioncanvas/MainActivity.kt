@@ -298,6 +298,8 @@ fun MotionCanvasApp() {
                 error("Legacy JSON project is not supported by Phase 13 loader")
             }
 
+            require(model.width == rasterWidth && model.height == rasterHeight) { "Unsupported canvas size" }
+
             fun ProjectIoStroke.toStroke() = Stroke(
                 points = points.map { Offset(it.first, it.second) },
                 inHandles = inHandles.map { Offset(it.first, it.second) },
