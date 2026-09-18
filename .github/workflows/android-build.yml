@@ -2,9 +2,9 @@ name: Android Build
 
 on:
   push:
-    branches: [ main ]
+    branches: ["**"]
   pull_request:
-    branches: [ main ]
+    branches: ["**"]
   workflow_dispatch:
 
 permissions:
@@ -42,12 +42,17 @@ jobs:
           gradle --no-daemon :app:assembleDebug --stacktrace --info 2>&1 | tee build.log
           exit ${PIPESTATUS[0]}
 
+      - name: Run JVM unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest --stacktrace --info 2>&1 | tee test.log
+
       - name: Upload build diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: motioncanvas-build-diagnostics
-          path: build.log
+          path: |
+            build.log
+            test.log
           if-no-files-found: warn
           retention-days: 14
 
