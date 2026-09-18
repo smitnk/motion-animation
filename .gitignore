@@ -1,13 +1,19 @@
-*.apk
-*.aab
-*.apks
+# Gradle
 .gradle/
 build/
-**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android
 local.properties
-.idea/
-*.iml
-.DS_Store
 .externalNativeBuild/
 .cxx/
 captures/
+
+# IDE
+.idea/
+*.iml
+
+# Generated
+app/build/
+out/
+.DS_Store
