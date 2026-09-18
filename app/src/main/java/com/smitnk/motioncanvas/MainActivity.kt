@@ -1493,6 +1493,27 @@ fun MotionCanvasApp() {
             Button(onClick = { setHold(1) }) { Text("Hold 1") }
         }
 
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Frame " + (frameIndex + 1) + "/" + frameData.size, Modifier.width(105.dp))
+            Slider(
+                value = frameIndex.toFloat(),
+                onValueChange = { value ->
+                    val target = value.toInt().coerceIn(0, frameData.lastIndex)
+                    if (target != frameIndex) {
+                        saveFrame()
+                        loadFrame(target)
+                    }
+                },
+                valueRange = 0f..frameData.lastIndex.toFloat(),
+                steps = (frameData.size - 2).coerceAtLeast(0),
+                modifier = Modifier.weight(1f),
+                enabled = frameData.size > 1
+            )
+        }
+
         LazyRow(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             itemsIndexed(frameData) { index, frame ->
                 Surface(
