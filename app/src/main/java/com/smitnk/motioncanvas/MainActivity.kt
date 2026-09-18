@@ -940,6 +940,18 @@ fun MotionCanvasApp() {
         }
     }
 
+    fun moveCurrentFrame(delta: Int) {
+        val target = (frameIndex + delta).coerceIn(0, frameData.lastIndex)
+        if (target == frameIndex) return
+        saveFrame()
+        frameData = TimelineEngine.moveFrame(frameData, frameIndex, target)
+        rasterFrames = rasterFrames.toMutableList().also {
+            val item = it.removeAt(frameIndex)
+            it.add(target, item)
+        }
+        loadFrame(target)
+    }
+
     fun setHold(value: Int) {
         saveFrame()
         val f = frameData[frameIndex]
@@ -1723,6 +1735,9 @@ fun MotionCanvasApp() {
             Button(onClick = ::addFrame) { Text("+ Frame") }
             Button(onClick = ::duplicateFrame) { Text("Duplicate") }
             Button(onClick = ::deleteFrame, enabled = frameData.size > 1) { Text("Delete") }
+            Button(onClick = { moveCurrentFrame(-1) }, enabled = frameIndex > 0) { Text("← Move") }
+            Button(onClick = { moveCurrentFrame(1) }, enabled = frameIndex < frameData.lastIndex) { Text("Move →") }
+
         }
     }
 }
