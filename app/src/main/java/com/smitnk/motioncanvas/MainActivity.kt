@@ -992,11 +992,17 @@ fun MotionCanvasApp() {
                 val encoder = GifEncoder(output, rasterWidth, rasterHeight, 0)
                 val options = ImageOptions()
                 options.setDelay((1000L / fps).coerceAtLeast(1L), TimeUnit.MILLISECONDS)
+                val pixels = IntArray(rasterWidth * rasterHeight)
+                val data = Array(rasterWidth) { IntArray(rasterHeight) }
                 frameData.indices.forEach { index ->
                     val bitmap = renderFrameBitmap(index)
-                    val pixels = IntArray(rasterWidth * rasterHeight)
                     bitmap.getPixels(pixels, 0, rasterWidth, 0, 0, rasterWidth, rasterHeight)
-                    val data = Array(rasterWidth) { x -> IntArray(rasterHeight) { y -> pixels[y * rasterWidth + x] } }
+                    for (x in 0 until rasterWidth) {
+                        val column = data[x]
+                        for (y in 0 until rasterHeight) {
+                            column[y] = pixels[y * rasterWidth + x]
+                        }
+                    }
                     val hold = frameData[index].layers.firstOrNull()?.hold?.coerceAtLeast(1) ?: 1
                     repeat(hold) { encoder.addImage(data, options) }
                     bitmap.recycle()
