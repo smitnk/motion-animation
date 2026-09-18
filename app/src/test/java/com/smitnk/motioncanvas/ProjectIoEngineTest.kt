@@ -31,6 +31,18 @@ class ProjectIoEngineTest {
         val text = ProjectIoEngine.encode(model()).replace("|10.0|", "|NaN|")
         assertThrows(IllegalArgumentException::class.java) { ProjectIoEngine.decode(text) }
     }
+    @Test fun mismatchedPressureCountIsRejected() {
+        val badStroke = ProjectIoStroke(listOf(1f to 2f, 3f to 4f), pressures = listOf(1f), colorArgb = -16777216, width = 10f)
+        val bad = model().copy(frames = listOf(ProjectIoFrame(listOf(ProjectIoLayerFrame(listOf(badStroke), 1), ProjectIoLayerFrame()))))
+        assertThrows(IllegalArgumentException::class.java) { ProjectIoEngine.encode(bad) }
+    }
+
+    @Test fun mismatchedBezierHandleCountIsRejected() {
+        val badStroke = ProjectIoStroke(listOf(1f to 2f, 3f to 4f), inHandles = listOf(0f to 0f), colorArgb = -16777216, width = 10f)
+        val bad = model().copy(frames = listOf(ProjectIoFrame(listOf(ProjectIoLayerFrame(listOf(badStroke), 1), ProjectIoLayerFrame()))))
+        assertThrows(IllegalArgumentException::class.java) { ProjectIoEngine.encode(bad) }
+    }
+
     @Test fun frameLayerCountMustMatchModelOnEncode() {
         val bad = model().copy(frames = listOf(ProjectIoFrame(listOf(ProjectIoLayerFrame()))))
         assertThrows(IllegalArgumentException::class.java) { ProjectIoEngine.encode(bad) }
