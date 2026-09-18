@@ -341,27 +341,29 @@ fun MotionCanvasApp() {
         }
     }
     fun exportCurrentPng() {
-        val merged = Bitmap.createBitmap(rasterWidth, rasterHeight, Bitmap.Config.ARGB_8888)
-        val canvas = AndroidCanvas(merged)
-        canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
-        rasterLayers.forEachIndexed { i, bitmap ->
-            if (layers.getOrNull(i)?.visible == true) {
-                val paint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG)
-                paint.alpha = (layers[i].opacity.coerceIn(0f, 1f) * 255f).toInt()
-                canvas.drawBitmap(bitmap, 0f, 0f, paint)
+        try {
+            saveFrame()
+            val merged = renderFrameBitmap(frameIndex)
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, "MotionCanvas_F${frameIndex + 1}.png")
+                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/MotionCanvas")
             }
+            val resolver = context.contentResolver
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            if (uri == null) {
+                merged.recycle()
+                exportStatus = "Export failed"
+                return
+            }
+            val written = resolver.openOutputStream(uri)?.use {
+                merged.compress(CompressFormat.PNG, 100, it)
+            } ?: false
+            merged.recycle()
+            exportStatus = if (written) "PNG exported to Pictures/MotionCanvas" else "Export failed"
+        } catch (e: Exception) {
+            exportStatus = "PNG export failed: " + (e.message ?: "unknown error")
         }
-        val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "MotionCanvas_F${frameIndex + 1}.png")
-            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/MotionCanvas")
-        }
-        val resolver = context.contentResolver
-        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-        if (uri == null) { exportStatus = "Export failed"; return }
-        resolver.openOutputStream(uri)?.use { merged.compress(CompressFormat.PNG, 100, it) }
-        merged.recycle()
-        exportStatus = "PNG exported to Pictures/MotionCanvas"
     }
 
     fun saveRasterFrame() {
