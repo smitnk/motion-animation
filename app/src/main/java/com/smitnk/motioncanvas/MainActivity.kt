@@ -854,6 +854,33 @@ fun MotionCanvasApp() {
         layers = layers.toMutableList().also { it[index] = it[index].copy(visible = !it[index].visible) }
     }
 
+    fun setLayerOpacity(index: Int, value: Float) {
+        if (index !in layers.indices) return
+        layers = layers.toMutableList().also { it[index] = it[index].copy(opacity = LayerWorkspaceEngine.opacity(value)) }
+    }
+
+    fun toggleLayerClipping(index: Int) {
+        if (index !in layers.indices) return
+        layers = layers.toMutableList().also { it[index] = it[index].copy(clipToBelow = !it[index].clipToBelow) }
+    }
+
+    fun moveLayer(targetIndex: Int) {
+        if (selectedLayer !in layers.indices || targetIndex !in layers.indices || selectedLayer == targetIndex) return
+        saveFrame()
+        val result = LayerWorkspaceEngine.reorder(layers, selectedLayer, targetIndex)
+        layers = result.items
+        currentStrokes = LayerWorkspaceEngine.reorder(currentStrokes, selectedLayer, targetIndex).items
+        rasterLayers = LayerWorkspaceEngine.reorder(rasterLayers, selectedLayer, targetIndex).items
+        frameData = frameData.map { frame ->
+            frame.copy(layers = LayerWorkspaceEngine.reorder(frame.layers, selectedLayer, targetIndex).items)
+        }
+        rasterFrames = rasterFrames.map { frame ->
+            LayerWorkspaceEngine.reorder(frame, selectedLayer, targetIndex).items
+        }
+        selectedLayer = result.selectedIndex
+        loadFrame(frameIndex)
+    }
+
     LaunchedEffect(playing, fps, frameData.size, pingPong) {
         while (playing) {
             delay(1000L / fps)
@@ -1487,9 +1514,39 @@ fun MotionCanvasApp() {
                             }
                         }
                     }
+                    Text(
+                        "Opacity " + (layers.getOrNull(selectedLayer)?.opacity?.times(100f)?.toInt() ?: 100) + "%",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+                    Slider(
+                        value = layers.getOrNull(selectedLayer)?.opacity ?: 1f,
+                        onValueChange = { setLayerOpacity(selectedLayer, it) },
+                        modifier = Modifier.padding(horizontal = 6.dp),
+                        enabled = layers.isNotEmpty()
+                    )
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                        Button(onClick = ::addLayer, modifier = Modifier.padding(3.dp)) { Text("+") }
-                        Button(onClick = ::deleteLayer, enabled = layers.size > 1, modifier = Modifier.padding(3.dp)) { Text("−") }
+                        Button(
+                            onClick = { moveLayer(LayerWorkspaceEngine.moveUp(layers.size, selectedLayer)) },
+                            enabled = selectedLayer > 0,
+                            modifier = Modifier.padding(2.dp)
+                        ) { Text("↑") }
+                        Button(
+                            onClick = { moveLayer(LayerWorkspaceEngine.moveDown(layers.size, selectedLayer)) },
+                            enabled = selectedLayer < layers.lastIndex,
+                            modifier = Modifier.padding(2.dp)
+                        ) { Text("↓") }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                        Button(onClick = ::addLayer, modifier = Modifier.padding(2.dp)) { Text("+") }
+                        Button(onClick = ::deleteLayer, enabled = layers.size > 1, modifier = Modifier.padding(2.dp)) { Text("−") }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                        FilterChip(
+                            selected = layers.getOrNull(selectedLayer)?.clipToBelow == true,
+                            onClick = { toggleLayerClipping(selectedLayer) },
+                            label = { Text("Clip") }
+                        )
                     }
                 }
             }
