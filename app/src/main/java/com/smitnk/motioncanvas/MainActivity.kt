@@ -226,6 +226,67 @@ fun MotionCanvasApp() {
 
     fun copyBitmap(source: Bitmap): Bitmap = source.copy(Bitmap.Config.ARGB_8888, true)
 
+    fun saveRasterFrame() {
+        rasterFrames = rasterFrames.toMutableList().also { it[frameIndex] = rasterLayers.map { bitmap -> copyBitmap(bitmap) } }
+    }
+
+    fun loadRasterFrame(index: Int) {
+        if (index !in rasterFrames.indices) return
+        rasterLayers = rasterFrames[index].map { bitmap -> copyBitmap(bitmap) }
+    }
+
+    fun saveFrame() {
+        if (frameIndex !in frameData.indices) return
+        saveRasterFrame()
+        val old = frameData[frameIndex]
+        frameData = frameData.toMutableList().also {
+            it[frameIndex] = Frame(currentStrokes.mapIndexed { i, strokes ->
+                LayerFrame(strokes, old.layers.getOrNull(i)?.hold ?: 1)
+            })
+        }
+    }
+
+
+    fun renderFrameBitmap(index: Int): Bitmap {
+        val merged = Bitmap.createBitmap(rasterWidth, rasterHeight, Bitmap.Config.ARGB_8888)
+        val canvas = AndroidCanvas(merged)
+        canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+        rasterFrames.getOrNull(index)?.forEachIndexed { i, bitmap ->
+            if (layers.getOrNull(i)?.visible == true) {
+                val paint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG)
+                paint.alpha = (layers[i].opacity.coerceIn(0f, 1f) * 255f).toInt()
+                canvas.drawBitmap(bitmap, 0f, 0f, paint)
+            }
+        }
+        frameData.getOrNull(index)?.layers?.forEachIndexed { i, layer ->
+            if (layers.getOrNull(i)?.visible != true) return@forEachIndexed
+            layer.strokes.forEach { stroke ->
+                if (stroke.points.isEmpty()) return@forEach
+                val path = android.graphics.Path().apply {
+                    moveTo(stroke.points.first().x, stroke.points.first().y)
+                    if (stroke.inHandles.size == stroke.points.size && stroke.outHandles.size == stroke.points.size) {
+                        for (j in 0 until stroke.points.lastIndex) {
+                            val a = stroke.points[j]
+                            val b = stroke.points[j + 1]
+                            val c1 = android.graphics.PointF(a.x + stroke.outHandles[j].x, a.y + stroke.outHandles[j].y)
+                            val c2 = android.graphics.PointF(b.x + stroke.inHandles[j + 1].x, b.y + stroke.inHandles[j + 1].y)
+                            cubicTo(c1.x, c1.y, c2.x, c2.y, b.x, b.y)
+                        }
+                    } else stroke.points.drop(1).forEach { lineTo(it.x, it.y) }
+                    if (stroke.closed) close()
+                }
+                val paint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG)
+                paint.color = stroke.color.copy(alpha = stroke.opacity * layers[i].opacity).toArgb()
+                paint.style = if (stroke.filled) AndroidPaint.Style.FILL else AndroidPaint.Style.STROKE
+                paint.strokeWidth = stroke.width
+                paint.strokeCap = AndroidPaint.Cap.ROUND
+                canvas.drawPath(path, paint)
+            }
+        }
+        return merged
+    }
+
+
     fun projectJson(): String {
         val model = ProjectIoModel(
             version = 2,
@@ -365,26 +426,6 @@ fun MotionCanvasApp() {
             exportStatus = if (written) "PNG exported to Pictures/MotionCanvas" else "Export failed"
         } catch (e: Exception) {
             exportStatus = "PNG export failed: " + (e.message ?: "unknown error")
-        }
-    }
-
-    fun saveRasterFrame() {
-        rasterFrames = rasterFrames.toMutableList().also { it[frameIndex] = rasterLayers.map { bitmap -> copyBitmap(bitmap) } }
-    }
-
-    fun loadRasterFrame(index: Int) {
-        if (index !in rasterFrames.indices) return
-        rasterLayers = rasterFrames[index].map { bitmap -> copyBitmap(bitmap) }
-    }
-
-    fun saveFrame() {
-        if (frameIndex !in frameData.indices) return
-        saveRasterFrame()
-        val old = frameData[frameIndex]
-        frameData = frameData.toMutableList().also {
-            it[frameIndex] = Frame(currentStrokes.mapIndexed { i, strokes ->
-                LayerFrame(strokes, old.layers.getOrNull(i)?.hold ?: 1)
-            })
         }
     }
 
@@ -959,45 +1000,6 @@ fun MotionCanvasApp() {
                 }
             } else loadFrame(next)
         }
-    }
-
-    fun renderFrameBitmap(index: Int): Bitmap {
-        val merged = Bitmap.createBitmap(rasterWidth, rasterHeight, Bitmap.Config.ARGB_8888)
-        val canvas = AndroidCanvas(merged)
-        canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
-        rasterFrames.getOrNull(index)?.forEachIndexed { i, bitmap ->
-            if (layers.getOrNull(i)?.visible == true) {
-                val paint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG)
-                paint.alpha = (layers[i].opacity.coerceIn(0f, 1f) * 255f).toInt()
-                canvas.drawBitmap(bitmap, 0f, 0f, paint)
-            }
-        }
-        frameData.getOrNull(index)?.layers?.forEachIndexed { i, layer ->
-            if (layers.getOrNull(i)?.visible != true) return@forEachIndexed
-            layer.strokes.forEach { stroke ->
-                if (stroke.points.isEmpty()) return@forEach
-                val path = android.graphics.Path().apply {
-                    moveTo(stroke.points.first().x, stroke.points.first().y)
-                    if (stroke.inHandles.size == stroke.points.size && stroke.outHandles.size == stroke.points.size) {
-                        for (j in 0 until stroke.points.lastIndex) {
-                            val a = stroke.points[j]
-                            val b = stroke.points[j + 1]
-                            val c1 = android.graphics.PointF(a.x + stroke.outHandles[j].x, a.y + stroke.outHandles[j].y)
-                            val c2 = android.graphics.PointF(b.x + stroke.inHandles[j + 1].x, b.y + stroke.inHandles[j + 1].y)
-                            cubicTo(c1.x, c1.y, c2.x, c2.y, b.x, b.y)
-                        }
-                    } else stroke.points.drop(1).forEach { lineTo(it.x, it.y) }
-                    if (stroke.closed) close()
-                }
-                val paint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG)
-                paint.color = stroke.color.copy(alpha = stroke.opacity * layers[i].opacity).toArgb()
-                paint.style = if (stroke.filled) AndroidPaint.Style.FILL else AndroidPaint.Style.STROKE
-                paint.strokeWidth = stroke.width
-                paint.strokeCap = AndroidPaint.Cap.ROUND
-                canvas.drawPath(path, paint)
-            }
-        }
-        return merged
     }
 
     fun exportGif(uri: Uri) {
