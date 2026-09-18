@@ -115,6 +115,9 @@ object ProjectIoEngine {
     private fun validateStroke(s: ProjectIoStroke) {
         require(s.width.isFinite() && s.width > 0f)
         require(s.opacity.isFinite() && s.opacity in 0f..1f)
+        require(s.pressures.isEmpty() || s.pressures.size == s.points.size)
+        require(s.inHandles.isEmpty() || s.inHandles.size == s.points.size)
+        require(s.outHandles.isEmpty() || s.outHandles.size == s.points.size)
         require(s.pressures.all { it.isFinite() })
         require(s.points.all { it.first.isFinite() && it.second.isFinite() })
         require(s.inHandles.all { it.first.isFinite() && it.second.isFinite() })
