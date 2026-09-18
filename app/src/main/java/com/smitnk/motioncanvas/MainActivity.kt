@@ -954,6 +954,21 @@ fun MotionCanvasApp() {
     val loadLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) loadProject(uri) }
     val gifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/gif")) { uri -> if (uri != null) exportGif(uri) }
 
+    LaunchedEffect(playing, fps, pingPong, frameData.size) {
+        var playbackState = PlaybackState(frameIndex = frameIndex, direction = playDirection)
+        while (playing && frameData.size > 1) {
+            val hold = frameData.getOrNull(playbackState.frameIndex)?.layers?.firstOrNull()?.hold ?: 1
+            delay(AnimationPlaybackEngine.delayMillis(fps))
+            val next = AnimationPlaybackEngine.tick(playbackState, frameData.size, pingPong, hold)
+            playbackState = next
+            if (next.frameIndex != frameIndex) {
+                saveFrame()
+                loadFrame(next.frameIndex)
+            }
+            playDirection = next.direction
+        }
+    }
+
     val colors = listOf(
         Color.Black, Color.White, Color.Red, Color(0xFFFF9800), Color.Yellow,
         Color.Green, Color.Cyan, Color.Blue, Color.Magenta, Color(0xFF795548)
@@ -1358,9 +1373,15 @@ fun MotionCanvasApp() {
                         }
                     }
 
-                    if (onionSkin && frameIndex > 0) {
-                        frameData[frameIndex - 1].layers.forEach { layer ->
-                            layer.strokes.forEach { s -> drawStroke(this, s, Color.Red.copy(alpha = 0.14f)) }
+                    if (onionSkin) {
+                        OnionSkinEngine.neighborIndices(frameIndex, frameData.size, before = 2, after = 1).forEach { neighbor ->
+                            val distance = kotlin.math.abs(neighbor - frameIndex)
+                            val tint = if (neighbor < frameIndex) Color.Red else Color.Blue
+                            frameData.getOrNull(neighbor)?.layers?.forEach { layer ->
+                                layer.strokes.forEach { s ->
+                                    drawStroke(this, s, tint.copy(alpha = OnionSkinEngine.opacity(distance)))
+                                }
+                            }
                         }
                     }
 
