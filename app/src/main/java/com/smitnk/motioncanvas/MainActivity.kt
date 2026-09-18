@@ -986,22 +986,6 @@ fun MotionCanvasApp() {
         loadFrame(frameIndex)
     }
 
-    LaunchedEffect(playing, fps, frameData.size, pingPong) {
-        while (playing) {
-            delay(1000L / fps)
-            val next = frameIndex + playDirection
-            if (next >= frameData.size || next < 0) {
-                if (pingPong && frameData.size > 1) {
-                    playDirection = -playDirection
-                    loadFrame((frameIndex + playDirection).coerceIn(0, frameData.lastIndex))
-                } else {
-                    playDirection = 1
-                    loadFrame(0)
-                }
-            } else loadFrame(next)
-        }
-    }
-
     fun exportGif(uri: Uri) {
         try {
             context.contentResolver.openOutputStream(uri)?.use { output ->
@@ -1033,7 +1017,12 @@ fun MotionCanvasApp() {
         var playbackState = PlaybackState(frameIndex = frameIndex, direction = playDirection)
         while (playing && frameData.size > 1) {
             val hold = frameData.getOrNull(playbackState.frameIndex)?.layers?.firstOrNull()?.hold ?: 1
-            delay(AnimationPlaybackEngine.delayMillis(fps))
+            delay(
+                AnimationPlaybackEngine.delayMillis(
+                    fps,
+                    frameData.getOrNull(playbackState.frameIndex)?.layers?.firstOrNull()?.hold ?: 1
+                )
+            )
             val next = AnimationPlaybackEngine.tick(playbackState, frameData.size, pingPong, hold)
             playbackState = next
             if (next.frameIndex != frameIndex) {
