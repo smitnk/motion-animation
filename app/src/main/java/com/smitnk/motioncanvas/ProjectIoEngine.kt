@@ -38,12 +38,12 @@ object ProjectIoEngine {
         val layers = mutableMapOf<Int, ProjectIoLayer>()
         val frameLayers = mutableMapOf<Pair<Int, Int>, ProjectIoLayerFrame>()
         val strokes = mutableMapOf<Pair<Int, Int>, MutableList<ProjectIoStroke>>()
-        var frameCount = 0
+        val declaredFrameRecords = mutableSetOf<Int>()
 
         lines.drop(1).forEach { line ->
             val p = line.split("|")
             when (p[0]) {
-                "version", "width", "height", "layers", "frames" -> { require(p.size == 2); meta[p[0]] = p[1] }
+                "version", "width", "height", "layers", "frames" -> { require(p.size == 2); require(p[0] !in meta); meta[p[0]] = p[1] }
                 "layer" -> {
                     require(p.size == 6)
                     val index = p[1].toInt().also { require(it >= 0) }
@@ -53,7 +53,8 @@ object ProjectIoEngine {
                 "frame" -> {
                     require(p.size == 3)
                     val index = p[1].toInt().also { require(it >= 0) }
-                    frameCount = maxOf(frameCount, index + 1)
+                    require(index !in declaredFrameRecords)
+                    declaredFrameRecords += index
                 }
                 "layerframe" -> {
                     require(p.size == 4)
@@ -87,7 +88,7 @@ object ProjectIoEngine {
         val layerCount = meta["layers"]?.toInt() ?: error("Missing layer count")
         val declaredFrames = meta["frames"]?.toInt() ?: error("Missing frame count")
         require(width > 0 && height > 0 && layerCount > 0 && declaredFrames > 0)
-        require(frameCount <= declaredFrames)
+        require(declaredFrameRecords.all { it < declaredFrames })
         require(layers.keys.all { it < layerCount })
 
         val ordered = (0 until layerCount).map { layers[it] ?: ProjectIoLayer("Layer " + (it + 1)) }
