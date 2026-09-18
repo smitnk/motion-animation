@@ -45,6 +45,11 @@ jobs:
       - name: Run JVM unit tests
         run: gradle --no-daemon :app:testDebugUnitTest --stacktrace --info 2>&1 | tee test.log
 
+      - name: Build unsigned release APK
+        run: |
+          gradle --no-daemon :app:assembleRelease --stacktrace --info 2>&1 | tee release-build.log
+          exit ${PIPESTATUS[0]}
+
       - name: Upload build diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -53,6 +58,7 @@ jobs:
           path: |
             build.log
             test.log
+            release-build.log
           if-no-files-found: warn
           retention-days: 14
 
@@ -62,5 +68,14 @@ jobs:
         with:
           name: motioncanvas-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload unsigned release APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: motioncanvas-release-apk-unsigned
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
