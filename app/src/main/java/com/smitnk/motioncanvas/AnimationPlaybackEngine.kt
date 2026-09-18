@@ -33,7 +33,11 @@ object AnimationPlaybackEngine {
         }
     }
 
-    fun delayMillis(fps: Int): Long = (1000L / fps.coerceIn(1, 120)).coerceAtLeast(1L)
+    fun delayMillis(fps: Int, hold: Int = 1): Long {
+        val safeFps = fps.coerceIn(1, 120)
+        val safeHold = hold.coerceAtLeast(1)
+        return ((1000L * safeHold) / safeFps).coerceAtLeast(1L)
+    }
 }
 
 object OnionSkinEngine {
