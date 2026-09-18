@@ -623,7 +623,24 @@ fun MotionCanvasApp() {
 
         if (current.size > 1) {
             snapshot()
-            var points = CoreDrawingEngine.stabilize(current, stabilization)
+            var points = current
+            var processedPressures = currentPressures
+
+            if (tool == Tool.BRUSH || tool == Tool.ERASER) {
+                val processed = BrushEngine.process(
+                    points = current,
+                    pressures = currentPressures,
+                    width = width,
+                    stabilization = stabilization,
+                    streamline = streamline,
+                    spacing = spacing,
+                    deepEngine = deepBrushEngine
+                )
+                points = processed.points
+                processedPressures = processed.pressures
+            } else {
+                points = CoreDrawingEngine.stabilize(current, stabilization)
+            }
 
             points = when (tool) {
                 Tool.LINE -> listOf(points.first(), points.last())
@@ -664,9 +681,9 @@ fun MotionCanvasApp() {
                     paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
                 }
 
-                if (pressureEnabled && currentPressures.isNotEmpty() && brushType != "Marker") {
+                if (pressureEnabled && processedPressures.isNotEmpty() && brushType != "Marker") {
                     for (i in points.indices) {
-                        val pressure = currentPressures.getOrNull(i) ?: 1f
+                        val pressure = processedPressures.getOrNull(i) ?: 1f
                         val progress = i.toFloat() / max(1, points.lastIndex)
                         val pressurePaint = AndroidPaint(paint).apply {
                             strokeWidth = CoreDrawingEngine.pressureWidth(width, pressure, taper, progress)
@@ -707,7 +724,7 @@ fun MotionCanvasApp() {
 
             val stroke = Stroke(
                 points = points,
-                pressures = currentPressures,
+                pressures = processedPressures,
                 color = if (tool == Tool.ERASER) Color.Transparent else brush,
                 width = width,
                 opacity = opacity,
