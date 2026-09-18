@@ -258,6 +258,7 @@ fun MotionCanvasApp() {
 
     fun saveProject(uri: Uri) {
         try {
+            saveFrame()
             context.contentResolver.openOutputStream(uri)?.use { output ->
                 ZipOutputStream(output).use { zip ->
                     zip.putNextEntry(ZipEntry("project.txt"))
@@ -973,7 +974,15 @@ fun MotionCanvasApp() {
                 if (stroke.points.isEmpty()) return@forEach
                 val path = android.graphics.Path().apply {
                     moveTo(stroke.points.first().x, stroke.points.first().y)
-                    stroke.points.drop(1).forEach { lineTo(it.x, it.y) }
+                    if (stroke.inHandles.size == stroke.points.size && stroke.outHandles.size == stroke.points.size) {
+                        for (j in 0 until stroke.points.lastIndex) {
+                            val a = stroke.points[j]
+                            val b = stroke.points[j + 1]
+                            val c1 = android.graphics.PointF(a.x + stroke.outHandles[j].x, a.y + stroke.outHandles[j].y)
+                            val c2 = android.graphics.PointF(b.x + stroke.inHandles[j + 1].x, b.y + stroke.inHandles[j + 1].y)
+                            cubicTo(c1.x, c1.y, c2.x, c2.y, b.x, b.y)
+                        }
+                    } else stroke.points.drop(1).forEach { lineTo(it.x, it.y) }
                     if (stroke.closed) close()
                 }
                 val paint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG)
@@ -998,7 +1007,8 @@ fun MotionCanvasApp() {
                     val pixels = IntArray(rasterWidth * rasterHeight)
                     bitmap.getPixels(pixels, 0, rasterWidth, 0, 0, rasterWidth, rasterHeight)
                     val data = Array(rasterWidth) { x -> IntArray(rasterHeight) { y -> pixels[y * rasterWidth + x] } }
-                    encoder.addImage(data, options)
+                    val hold = frameData[index].layers.firstOrNull()?.hold?.coerceAtLeast(1) ?: 1
+                    repeat(hold) { encoder.addImage(data, options) }
                     bitmap.recycle()
                 }
                 encoder.finishEncoding()
