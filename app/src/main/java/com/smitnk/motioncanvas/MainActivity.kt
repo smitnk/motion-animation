@@ -414,6 +414,34 @@ fun MotionCanvasApp() {
             }
             val resolver = context.contentResolver
             val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                ?: error("Unable to create image entry")
+            try {
+                val written = resolver.openOutputStream(uri)?.use {
+                    merged.compress(CompressFormat.PNG, 100, it)
+                } ?: false
+                if (!written) error("Unable to write PNG")
+                exportStatus = "PNG exported to Pictures/MotionCanvas"
+            } catch (e: Exception) {
+                resolver.delete(uri, null, null)
+                throw e
+            } finally {
+                merged.recycle()
+            }
+        } catch (e: Exception) {
+            exportStatus = "PNG export failed: " + (e.message ?: "unknown error")
+        }
+    }
+
+        try {
+            saveFrame()
+            val merged = renderFrameBitmap(frameIndex)
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, "MotionCanvas_F${frameIndex + 1}.png")
+                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/MotionCanvas")
+            }
+            val resolver = context.contentResolver
+            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
             if (uri == null) {
                 merged.recycle()
                 exportStatus = "Export failed"
@@ -1004,21 +1032,26 @@ fun MotionCanvasApp() {
 
     fun exportGif(uri: Uri) {
         try {
+            saveFrame()
+            if (frameData.isEmpty()) error("No animation frames")
             context.contentResolver.openOutputStream(uri)?.use { output ->
                 val encoder = GifEncoder(output, rasterWidth, rasterHeight, 0)
                 val options = ImageOptions()
-                options.setDelay((1000L / fps).coerceAtLeast(1L), TimeUnit.MILLISECONDS)
+                options.setDelay((1000L / fps.coerceAtLeast(1)).coerceAtLeast(1L), TimeUnit.MILLISECONDS)
                 frameData.indices.forEach { index ->
                     val bitmap = renderFrameBitmap(index)
-                    val pixels = IntArray(rasterWidth * rasterHeight)
-                    bitmap.getPixels(pixels, 0, rasterWidth, 0, 0, rasterWidth, rasterHeight)
-                    val data = Array(rasterWidth) { x -> IntArray(rasterHeight) { y -> pixels[y * rasterWidth + x] } }
-                    val hold = frameData[index].layers.firstOrNull()?.hold?.coerceAtLeast(1) ?: 1
-                    repeat(hold) { encoder.addImage(data, options) }
-                    bitmap.recycle()
+                    try {
+                        val pixels = IntArray(rasterWidth * rasterHeight)
+                        bitmap.getPixels(pixels, 0, rasterWidth, 0, 0, rasterWidth, rasterHeight)
+                        val data = Array(rasterWidth) { x -> IntArray(rasterHeight) { y -> pixels[y * rasterWidth + x] } }
+                        val hold = frameData[index].layers.firstOrNull()?.hold?.coerceAtLeast(1) ?: 1
+                        repeat(hold) { encoder.addImage(data, options) }
+                    } finally {
+                        bitmap.recycle()
+                    }
                 }
                 encoder.finishEncoding()
-            }
+            } ?: error("Unable to open GIF output")
             exportStatus = "GIF exported"
         } catch (e: Exception) {
             exportStatus = "GIF export failed: " + (e.message ?: "unknown error")
