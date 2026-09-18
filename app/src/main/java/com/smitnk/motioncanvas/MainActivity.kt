@@ -608,114 +608,103 @@ fun MotionCanvasApp() {
             snapshot()
             val p = current.last()
             val bitmap = rasterLayers[selectedLayer]
-            floodFill(bitmap, p.x.toInt().coerceIn(0, rasterWidth - 1), p.y.toInt().coerceIn(0, rasterHeight - 1), brush.toArgb())
+            floodFill(
+                bitmap,
+                p.x.toInt().coerceIn(0, rasterWidth - 1),
+                p.y.toInt().coerceIn(0, rasterHeight - 1),
+                brush.toArgb()
+            )
             rasterLayers = rasterLayers.toMutableList().also { it[selectedLayer] = bitmap }
             saveRasterFrame()
             current = emptyList()
             currentPressures = emptyList()
             return
         }
+
         if (current.size > 1) {
             snapshot()
-            val stabilized = if (stabilization <= 0f) current else {
-                val out = ArrayList<Offset>()
-                var last = current.first()
-                out.add(last)
-                current.drop(1).forEach { p ->
-                    last = Offset(
-                        last.x + (p.x - last.x) * (1f - stabilization),
-                        last.y + (p.y - last.y) * (1f - stabilization)
-                    )
-                    out.add(last)
-                }
-                out
-            }
-            val points = when (tool) {
-                Tool.LINE -> listOf(stabilized.first(), stabilized.last())
+            var points = CoreDrawingEngine.stabilize(current, stabilization)
+
+            points = when (tool) {
+                Tool.LINE -> listOf(points.first(), points.last())
                 Tool.RECTANGLE -> {
-                    val a = stabilized.first()
-                    val b = stabilized.last()
+                    val a = points.first()
+                    val b = points.last()
                     listOf(a, Offset(b.x, a.y), b, Offset(a.x, b.y), a)
                 }
-                Tool.ELLIPSE -> {
-                    val a = stabilized.first()
-                    val b = stabilized.last()
-                    val cx = (a.x + b.x) / 2f
-                    val cy = (a.y + b.y) / 2f
-                    val rx = kotlin.math.abs(b.x - a.x) / 2f
-                    val ry = kotlin.math.abs(b.y - a.y) / 2f
-                    (0..48).map { i ->
-                        val t = i * 2f * PI.toFloat() / 48f
-                        Offset(cx + rx * cos(t), cy + ry * sin(t))
-                    }
-                }
-                else -> {
-                    if (spacing <= 0f || stabilized.size < 2) stabilized else {
-                        val out = ArrayList<Offset>()
-                        out.add(stabilized.first())
-                        var carry = 0f
-                        for (i in 1 until stabilized.size) {
-                            val a = stabilized[i - 1]; val b = stabilized[i]
-                            val dx = b.x - a.x; val dy = b.y - a.y
-                            val dist = kotlin.math.sqrt(dx * dx + dy * dy)
-                            carry += dist
-                            if (carry >= max(1f, width * spacing)) { out.add(b); carry = 0f }
-                        }
-                        if (out.last() != stabilized.last()) out.add(stabilized.last())
-                        out
-                    }
-                }
+                Tool.ELLIPSE -> CoreDrawingEngine.ellipse(points.first(), points.last())
+                else -> CoreDrawingEngine.respace(points, spacing, width)
             }
-            if (quickShape && (tool == Tool.BRUSH || tool == Tool.ERASER) && points.size >= 6) {
-                // Quick Shape: when enabled, gently regularize nearly straight strokes.
-                val a = points.first(); val b = points.last()
-                val dx = b.x - a.x; val dy = b.y - a.y
-                if (kotlin.math.abs(dx) > kotlin.math.abs(dy) * 6f || kotlin.math.abs(dy) > kotlin.math.abs(dx) * 6f) {
-                    val snapped = if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) points.map { Offset(it.x, a.y + (b.y-a.y) * ((it.x-a.x)/(dx.takeIf { it != 0f } ?: 1f))) } else points.map { Offset(a.x + (b.x-a.x) * ((it.y-a.y)/(dy.takeIf { it != 0f } ?: 1f)), it.y) }
-                    current = snapped
-                }
+
+            if (quickShape && (tool == Tool.BRUSH || tool == Tool.ERASER)) {
+                points = CoreDrawingEngine.quickStraighten(points)
             }
+
             if (tool == Tool.BRUSH || tool == Tool.ERASER) {
                 val bitmap = rasterLayers[selectedLayer]
                 val androidCanvas = AndroidCanvas(bitmap)
                 val paint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG or AndroidPaint.DITHER_FLAG)
+                val profile = when (brushType) {
+                    "Pen" -> BrushProfile.PEN
+                    "Marker" -> BrushProfile.MARKER
+                    "Airbrush" -> BrushProfile.AIRBRUSH
+                    else -> BrushProfile.PENCIL
+                }
                 paint.color = if (tool == Tool.ERASER) android.graphics.Color.TRANSPARENT else brush.toArgb()
                 paint.alpha = (opacity.coerceIn(0f, 1f) * 255f).toInt()
-                if (alphaLock && tool == Tool.BRUSH) paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP)
                 paint.style = AndroidPaint.Style.STROKE
-                paint.strokeWidth = when (brushType) {
-                    "Pen" -> width
-                    "Marker" -> width * 1.35f
-                    "Airbrush" -> width * 1.8f
-                    "Pencil" -> width * 0.82f
-                    else -> width
-                }.coerceAtLeast(1f)
-                if (deepBrushEngine) {
-                    paint.strokeMiter = 4f
-                    paint.isSubpixelText = true
-                }
+                paint.strokeWidth = CoreDrawingEngine.brushWidth(width, profile)
                 paint.strokeCap = AndroidPaint.Cap.ROUND
                 paint.strokeJoin = AndroidPaint.Join.ROUND
-                if (tool == Tool.ERASER) paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
-                val path = android.graphics.Path()
-                path.moveTo(points.first().x, points.first().y)
-                points.drop(1).forEach { path.lineTo(it.x, it.y) }
+
+                if (alphaLock && tool == Tool.BRUSH) {
+                    paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP)
+                }
+                if (tool == Tool.ERASER) {
+                    paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+                }
+
                 if (pressureEnabled && currentPressures.isNotEmpty() && brushType != "Marker") {
-                    val pressures = currentPressures
-                    for (i in 0 until minOf(points.size, pressures.size)) {
-                        val p = pressures[i].coerceIn(0.05f, 1.25f)
-                        val pressurePaint = AndroidPaint(paint)
-                        pressurePaint.strokeWidth = width * (0.45f + p * 0.85f) * (1f - taper * (i.toFloat() / max(1, points.lastIndex)))
-                        pressurePaint.alpha = (opacity.coerceIn(0f, 1f) * (0.45f + p * 0.55f) * 255f).toInt()
-                        if (i == 0) androidCanvas.drawCircle(points[i].x, points[i].y, pressurePaint.strokeWidth / 2f, pressurePaint)
-                        else androidCanvas.drawLine(points[i-1].x, points[i-1].y, points[i].x, points[i].y, pressurePaint)
+                    for (i in points.indices) {
+                        val pressure = currentPressures.getOrNull(i) ?: 1f
+                        val progress = i.toFloat() / max(1, points.lastIndex)
+                        val pressurePaint = AndroidPaint(paint).apply {
+                            strokeWidth = CoreDrawingEngine.pressureWidth(width, pressure, taper, progress)
+                            alpha = (opacity.coerceIn(0f, 1f) *
+                                (0.45f + pressure.coerceIn(0.05f, 1.25f) * 0.55f) * 255f).toInt()
+                        }
+                        if (i == 0) {
+                            androidCanvas.drawCircle(
+                                points[i].x,
+                                points[i].y,
+                                pressurePaint.strokeWidth / 2f,
+                                pressurePaint
+                            )
+                        } else {
+                            androidCanvas.drawLine(
+                                points[i - 1].x,
+                                points[i - 1].y,
+                                points[i].x,
+                                points[i].y,
+                                pressurePaint
+                            )
+                        }
                     }
+                } else if (points.size == 1) {
+                    androidCanvas.drawCircle(points[0].x, points[0].y, paint.strokeWidth / 2f, paint)
                 } else {
+                    val path = android.graphics.Path().apply {
+                        moveTo(points.first().x, points.first().y)
+                        points.drop(1).forEach { lineTo(it.x, it.y) }
+                    }
                     androidCanvas.drawPath(path, paint)
                 }
+
+                paint.xfermode = null
                 rasterLayers = rasterLayers.toMutableList().also { it[selectedLayer] = bitmap }
                 saveRasterFrame()
             }
+
             val stroke = Stroke(
                 points = points,
                 pressures = currentPressures,
@@ -725,6 +714,7 @@ fun MotionCanvasApp() {
                 closed = tool == Tool.RECTANGLE || tool == Tool.ELLIPSE,
                 filled = shapeFilled && (tool == Tool.RECTANGLE || tool == Tool.ELLIPSE)
             )
+
             val updated = currentStrokes.toMutableList()
             if (tool != Tool.BRUSH && tool != Tool.ERASER) {
                 updated[selectedLayer] = updated[selectedLayer] + stroke
@@ -733,19 +723,26 @@ fun MotionCanvasApp() {
             if (symmetry && tool != Tool.SELECT) {
                 val axisX = sizeOfCanvasFallback(symmetryAxis)
                 val mirrored = points.map { p -> Offset(axisX - (p.x - axisX), p.y) }
-                updated[selectedLayer] = updated[selectedLayer] + stroke.copy(points = mirrored, pressures = currentPressures)
+                updated[selectedLayer] = updated[selectedLayer] +
+                    stroke.copy(points = mirrored, pressures = currentPressures)
             }
+
             if (radialSymmetry && tool != Tool.SELECT) {
                 val center = Offset(rasterWidth / 2f, rasterHeight / 2f)
                 val count = radialCount.coerceIn(2, 24)
                 for (copyIndex in 1 until count) {
                     val angle = copyIndex * 360f / count.toFloat()
-                    updated[selectedLayer] = updated[selectedLayer] + stroke.copy(points = transformPoints(points, center, 1f, angle), pressures = currentPressures)
+                    updated[selectedLayer] = updated[selectedLayer] +
+                        stroke.copy(
+                            points = transformPoints(points, center, 1f, angle),
+                            pressures = currentPressures
+                        )
                 }
             }
 
             currentStrokes = updated
             saveFrame()
+
             if (tool == Tool.LINE || tool == Tool.RECTANGLE || tool == Tool.ELLIPSE) {
                 editStrokeIndex = updated[selectedLayer].lastIndex
                 editNodeIndex = -1
@@ -756,10 +753,10 @@ fun MotionCanvasApp() {
                 }
             }
         }
+
         current = emptyList()
         currentPressures = emptyList()
     }
-
     fun transformSelection(scaleFactor: Float, degrees: Float, delta: Offset) {
         if (selectedStrokeIds.isEmpty()) return
         val strokes = currentStrokes[selectedLayer]
