@@ -34,6 +34,8 @@ class AnimationPlaybackEngineTest {
 
     @Test fun fpsDelayIsSafe() {
         assertEquals(83L, AnimationPlaybackEngine.delayMillis(12))
+        assertEquals(250L, AnimationPlaybackEngine.delayMillis(12, 3))
+        assertEquals(1000L, AnimationPlaybackEngine.delayMillis(1, 1))
         assertTrue(AnimationPlaybackEngine.delayMillis(0) >= 1L)
     }
 
