@@ -227,58 +227,117 @@ fun MotionCanvasApp() {
     fun copyBitmap(source: Bitmap): Bitmap = source.copy(Bitmap.Config.ARGB_8888, true)
 
     fun projectJson(): String {
-        fun esc(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
-        val layerJson = layers.joinToString(",") { "{\"name\":\"" + esc(it.name) + "\",\"visible\":" + it.visible + ",\"opacity\":" + it.opacity + "}" }
-        val frameJson = frameData.joinToString(",") { frame ->
-            val ls = frame.layers.joinToString(",") { lf ->
-                val ss = lf.strokes.joinToString(",") { s ->
-                    val pts = s.points.joinToString(",") { "[" + it.x + "," + it.y + "]" }
-                    "{\"color\":" + s.color.toArgb() + ",\"width\":" + s.width + ",\"opacity\":" + s.opacity + ",\"closed\":" + s.closed + ",\"filled\":" + s.filled + ",\"points\":[" + pts + "]}"
-                }
-                "{\"hold\":" + lf.hold + ",\"strokes\":[" + ss + "]}"}
-            "{" + "\"layers\":[" + ls + "]}"
-        }
-        return "{\"version\":1,\"width\":" + rasterWidth + ",\"height\":" + rasterHeight + ",\"layers\":[" + layerJson + "],\"frames\":[" + frameJson + "]}"
+        val model = ProjectIoModel(
+            version = 2,
+            width = rasterWidth,
+            height = rasterHeight,
+            layers = layers.map { ProjectIoLayer(it.name, it.visible, it.opacity, it.clipToBelow) },
+            frames = frameData.map { frame ->
+                ProjectIoFrame(frame.layers.map { lf ->
+                    ProjectIoLayerFrame(
+                        strokes = lf.strokes.map { s ->
+                            ProjectIoStroke(
+                                points = s.points.map { it.x to it.y },
+                                inHandles = s.inHandles.map { it.x to it.y },
+                                outHandles = s.outHandles.map { it.x to it.y },
+                                pressures = s.pressures,
+                                colorArgb = s.color.toArgb(),
+                                width = s.width,
+                                opacity = s.opacity,
+                                closed = s.closed,
+                                filled = s.filled
+                            )
+                        },
+                        hold = lf.hold
+                    )
+                })
+            }
+        )
+        return ProjectIoEngine.encode(model)
     }
 
     fun saveProject(uri: Uri) {
         try {
-            context.contentResolver.openOutputStream(uri)?.use { output -> ZipOutputStream(output).use { zip ->
-                zip.putNextEntry(ZipEntry("project.json")); zip.write(projectJson().toByteArray(Charsets.UTF_8)); zip.closeEntry()
-                rasterFrames.forEachIndexed { fi, frame -> frame.forEachIndexed { li, bitmap ->
-                    zip.putNextEntry(ZipEntry("frames/f" + fi + "_l" + li + ".png")); bitmap.compress(CompressFormat.PNG, 100, zip); zip.closeEntry()
-                }}
-            }}
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                ZipOutputStream(output).use { zip ->
+                    zip.putNextEntry(ZipEntry("project.txt"))
+                    zip.write(projectJson().toByteArray(Charsets.UTF_8))
+                    zip.closeEntry()
+                    rasterFrames.forEachIndexed { fi, frame ->
+                        frame.forEachIndexed { li, bitmap ->
+                            zip.putNextEntry(ZipEntry("frames/f${fi}_l${li}.png"))
+                            bitmap.compress(CompressFormat.PNG, 100, zip)
+                            zip.closeEntry()
+                        }
+                    }
+                }
+            } ?: error("Unable to open project output")
             exportStatus = "Project saved"
-        } catch (e: Exception) { exportStatus = "Save failed" }
+        } catch (e: Exception) {
+            exportStatus = "Save failed"
+        }
     }
 
     fun loadProject(uri: Uri) {
         try {
             val temp = mutableMapOf<String, ByteArray>()
-            context.contentResolver.openInputStream(uri)?.use { input -> ZipInputStream(input).use { zip ->
-                while (true) { val entry = zip.nextEntry ?: break; if (!entry.isDirectory) temp[entry.name] = zip.readBytes() }
-            }}
-            val json = temp["project.json"] ?: error("Missing project")
-            val textJson = json.toString(Charsets.UTF_8)
-            val count = Regex("\\{\"layers\"").findAll(textJson).count().coerceAtLeast(1)
-            val loaded = ArrayList<List<Bitmap>>()
-            for (fi in 0 until count) {
-                loaded.add(layers.indices.map { li ->
-                    val bytes = temp["frames/f" + fi + "_l" + li + ".png"]
-                    if (bytes != null) android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size).copy(Bitmap.Config.ARGB_8888, true)
-                    else Bitmap.createBitmap(rasterWidth, rasterHeight, Bitmap.Config.ARGB_8888)
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                ZipInputStream(input).use { zip ->
+                    while (true) {
+                        val entry = zip.nextEntry ?: break
+                        if (!entry.isDirectory) temp[entry.name] = zip.readBytes()
+                    }
+                }
+            } ?: error("Unable to open project")
+
+            val projectBytes = temp["project.txt"] ?: temp["project.json"] ?: error("Missing project data")
+            val model = if (projectBytes.toString(Charsets.UTF_8).startsWith("MOTIONCANVAS_PROJECT_V2")) {
+                ProjectIoEngine.decode(projectBytes.toString(Charsets.UTF_8))
+            } else {
+                error("Legacy JSON project is not supported by Phase 13 loader")
+            }
+
+            fun ProjectIoStroke.toStroke() = Stroke(
+                points = points.map { Offset(it.first, it.second) },
+                inHandles = inHandles.map { Offset(it.first, it.second) },
+                outHandles = outHandles.map { Offset(it.first, it.second) },
+                pressures = pressures,
+                color = Color(colorArgb),
+                width = width,
+                opacity = opacity,
+                closed = closed,
+                filled = filled
+            )
+
+            val loadedLayers = model.layers.map { ArtLayer(it.name, it.visible, it.opacity, it.clipToBelow) }
+            val loadedFrames = model.frames.map { frame ->
+                Frame(frame.layers.map { lf ->
+                    LayerFrame(lf.strokes.map { it.toStroke() }, lf.hold)
                 })
             }
-            rasterFrames = loaded
-            frameData = List(count) { Frame(layers.map { LayerFrame() }) }
+
+            val loadedRasters = model.frames.mapIndexed { fi, _ ->
+                loadedLayers.indices.map { li ->
+                    val bytes = temp["frames/f${fi}_l${li}.png"]
+                    val decoded = bytes?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+                    if (decoded != null) decoded.copy(Bitmap.Config.ARGB_8888, true)
+                    else Bitmap.createBitmap(model.width, model.height, Bitmap.Config.ARGB_8888)
+                }
+            }
+
+            layers = loadedLayers
+            frameData = loadedFrames
+            rasterFrames = loadedRasters
             frameIndex = 0
-            currentStrokes = layers.indices.map { frameData[0].layers.getOrNull(it)?.strokes ?: emptyList() }
-            rasterLayers = rasterFrames[0].map { bitmap -> copyBitmap(bitmap) }
+            currentStrokes = loadedFrames.first().layers.map { it.strokes }
+            rasterLayers = loadedRasters.first().map { copyBitmap(it) }
+            selectedLayer = selectedLayer.coerceIn(0, loadedLayers.lastIndex)
             selectedStrokeIds = emptySet()
             selection = emptyList()
             exportStatus = "Project loaded"
-        } catch (e: Exception) { exportStatus = "Load failed" }
+        } catch (e: Exception) {
+            exportStatus = "Load failed"
+        }
     }
     fun exportCurrentPng() {
         val merged = Bitmap.createBitmap(rasterWidth, rasterHeight, Bitmap.Config.ARGB_8888)
