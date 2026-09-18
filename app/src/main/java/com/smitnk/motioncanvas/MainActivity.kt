@@ -1052,7 +1052,7 @@ fun MotionCanvasApp() {
         Column(
             Modifier
                 .fillMaxWidth()
-                .heightIn(max = 300.dp)
+                .heightIn(max = 230.dp)
                 .verticalScroll(rememberScrollState())
         ) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1164,6 +1164,27 @@ fun MotionCanvasApp() {
                     }
             ) {
                 Box(Modifier.fillMaxSize()) {
+                    Row(
+                        Modifier.align(Alignment.TopEnd).padding(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Button(
+                            onClick = { canvasScale = (canvasScale * 1.25f).coerceIn(0.25f, 8f) },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) { Text("+") }
+                        Button(
+                            onClick = { canvasScale = (canvasScale / 1.25f).coerceIn(0.25f, 8f) },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) { Text("−") }
+                        Button(
+                            onClick = {
+                                canvasScale = 1f
+                                pan = Offset.Zero
+                                rotation = 0f
+                            },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) { Text("Reset View") }
+                    }
                 Canvas(
                     Modifier.fillMaxSize()
                         .pointerInput(editStrokeIndex) {
