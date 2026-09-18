@@ -37,17 +37,23 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Materialize Gradle wrapper
+        run: |
+          gradle --no-daemon wrapper --gradle-version 8.9
+          chmod +x ./gradlew
+          ./gradlew --version
+
       - name: Build debug APK with detailed compiler diagnostics
         run: |
-          gradle --no-daemon :app:assembleDebug --stacktrace --info 2>&1 | tee build.log
+          ./gradlew --no-daemon :app:assembleDebug --stacktrace --info 2>&1 | tee build.log
           exit ${PIPESTATUS[0]}
 
       - name: Run JVM unit tests
-        run: gradle --no-daemon :app:testDebugUnitTest --stacktrace --info 2>&1 | tee test.log
+        run: ./gradlew --no-daemon :app:testDebugUnitTest --stacktrace --info 2>&1 | tee test.log
 
       - name: Build unsigned release APK
         run: |
-          gradle --no-daemon :app:assembleRelease --stacktrace --info 2>&1 | tee release-build.log
+          ./gradlew --no-daemon :app:assembleRelease --stacktrace --info 2>&1 | tee release-build.log
           exit ${PIPESTATUS[0]}
 
       - name: Upload build diagnostics
