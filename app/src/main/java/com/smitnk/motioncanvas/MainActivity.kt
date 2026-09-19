@@ -5,6 +5,7 @@ import android.content.ContentValues
 import android.provider.MediaStore
 import android.graphics.Bitmap.CompressFormat
 import android.net.Uri
+import android.media.MediaPlayer
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import java.util.zip.ZipInputStream
@@ -205,6 +206,21 @@ fun MotionCanvasApp() {
     var playing by remember { mutableStateOf(false) }
     var exportStatus by remember { mutableStateOf("") }
     val context = LocalContext.current
+    val audioEngine = remember { Mp3AudioEngine(context) }
+    var audioName by remember { mutableStateOf<String?>(null) }
+    val audioPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            audioEngine.load(uri)
+            audioName = uri.lastPathSegment ?: "MP3"
+            exportStatus = "MP3 loaded"
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { audioEngine.release() }
+    }
+
 
     fun artScale(): Float {
         if (canvasSize.width <= 0f || canvasSize.height <= 0f) return 1f
@@ -1730,6 +1746,35 @@ fun MotionCanvasApp() {
         }
 
         if (exportStatus.isNotEmpty()) Text(exportStatus, modifier = Modifier.padding(horizontal = 8.dp))
+        Surface(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+            tonalElevation = 2.dp
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text("Audio", style = MaterialTheme.typography.labelLarge)
+                Button(onClick = {
+                    audioPicker.launch(arrayOf("audio/mpeg", "audio/*"))
+                }) { Text("Import MP3") }
+                Button(
+                    onClick = { audioEngine.toggle() },
+                    enabled = audioEngine.hasAudio
+                ) { Text(if (audioEngine.isPlaying) "Pause" else "Play") }
+                Button(
+                    onClick = { audioEngine.stop() },
+                    enabled = audioEngine.hasAudio
+                ) { Text("Stop") }
+                Text(
+                    audioName ?: "No MP3",
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1
+                )
+            }
+        }
+
 
         Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Button(onClick = ::addFrame) { Text("+ Frame") }
@@ -1742,6 +1787,55 @@ fun MotionCanvasApp() {
     }
 }
 
+}
+
+private class Mp3AudioEngine(private val context: android.content.Context) {
+    private var player: MediaPlayer? = null
+    var hasAudio by mutableStateOf(false)
+        private set
+    var isPlaying by mutableStateOf(false)
+        private set
+
+    fun load(uri: Uri) {
+        release()
+        player = MediaPlayer().apply {
+            setDataSource(context, uri)
+            setOnPreparedListener {
+                hasAudio = true
+                isPlaying = false
+            }
+            setOnCompletionListener {
+                isPlaying = false
+            }
+            prepareAsync()
+        }
+    }
+
+    fun toggle() {
+        val p = player ?: return
+        if (p.isPlaying) {
+            p.pause()
+            isPlaying = false
+        } else {
+            p.start()
+            isPlaying = true
+        }
+    }
+
+    fun stop() {
+        player?.let {
+            if (it.isPlaying) it.pause()
+            it.seekTo(0)
+        }
+        isPlaying = false
+    }
+
+    fun release() {
+        player?.release()
+        player = null
+        hasAudio = false
+        isPlaying = false
+    }
 }
 
 private fun sizeOfCanvasFallback(axis: Float): Float = 500f * axis
